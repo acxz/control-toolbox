@@ -723,6 +723,54 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
 }
 
 
+// TODO: what is P_DIM and V_DIM
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::executeQQApproximation(size_t threadId,
+    size_t k)
+{
+    // TODO: create a QQOCProblem
+    QQOCProblem_t& p = *qqocProblem_;
+    const scalar_t& dt = settings_.dt;
+
+    assert(qqocProblem_ != nullptr);
+
+    assert(qqocProblem_->fxx_.size() > k);
+    assert(qqocProblem_->fxu_.size() > k);
+    assert(qqocProblem_->fuu_.size() > k);
+    assert(qqocProblem_->fx_.size() > k);
+    assert(qqocProblem_->fu_.size() > k);
+    assert(qqocProblem_->fo_.size() > k);
+
+
+    //! @warning it is important that the calculations are done with local variables x_ and u_ff_, they will only later be stored in the QQOCProblem
+    // compute fxx_n, fxu_n, fuu_n, fx_n, fu_n
+    // TODO: Implement getQuadDynamics (equivalent of getAandB)
+    systemInterface_->getQuadDynamics(x_[k], u_ff_[k], xShot_[k], (int)k, settings_.K_sim,
+        p.fxx_[k], p.fxu_[k], p.fuu_[k], p.fx_[k], p.fu_[k], threadId);
+
+    // compute dynamics offset term fo_n
+    p.fo_[k] = d_[k];
+
+    // feed current state and control to cost function
+    costFunctions_[threadId]->setCurrentStateAndControl(x_[k], u_ff_[k], dt * k);
+
+    // By using the following order of evaluations, we avoid caching matrices
+    // second derivative w.r.t state
+    p.Q_[k] = costFunctions_[threadId]->stateSecondDerivativeIntermediate() * dt;
+    // second derivative w.r.t control
+    p.R_[k] = costFunctions_[threadId]->controlSecondDerivativeIntermediate() * dt;
+    // cross terms
+    p.P_[k] = costFunctions_[threadId]->stateControlDerivativeIntermediate() * dt;
+
+    // derivative of cost with respect to state
+    p.qv_[k] = costFunctions_[threadId]->stateDerivativeIntermediate() * dt;
+    // derivative of cost with respect to control
+    p.rv_[k] = costFunctions_[threadId]->controlDerivativeIntermediate() * dt;
+
+    // p.q_[k] = ... // not evaluated since we don't need it in GNMS/iLQR -- WARNING, potentially implement when using a different QP solver
+}
+
+
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::setInputBoxConstraintsForLQOCProblem()
 {

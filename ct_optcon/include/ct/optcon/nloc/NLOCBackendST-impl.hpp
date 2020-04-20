@@ -51,6 +51,24 @@ void NLOCBackendST<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::co
     }
 }
 
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendST<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::computeQQApproximation(size_t firstIndex,
+    size_t lastIndex)
+{
+    if (lastIndex == static_cast<size_t>(this->K_) - 1)
+        this->initializeCostToGo();
+
+    for (size_t k = firstIndex; k <= lastIndex; k++)
+    {
+        this->executeQQApproximation(this->settings_.nThreads, k);
+
+        if (this->generalConstraints_[this->settings_.nThreads] != nullptr)
+            this->computeLinearizedConstraints(this->settings_.nThreads, k);
+    }
+}
+
+
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendST<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::rolloutShots(size_t firstIndex,
     size_t lastIndex)

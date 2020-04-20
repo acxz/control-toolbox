@@ -63,6 +63,8 @@ void MultipleShooting<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>:
     this->backend_->setInputBoxConstraintsForLQOCProblem();
     this->backend_->setStateBoxConstraintsForLQOCProblem();
     this->backend_->computeLQApproximation(K_shot, K - 1);
+    // TODO look into LQOCProblem 2 lines above
+    this->backend_->computeQQApproximation(K_shot, K - 1);
     auto end = std::chrono::steady_clock::now();
     auto diff = end - start;
     if (debugPrint)
@@ -112,6 +114,7 @@ bool MultipleShooting<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>:
 
     auto start = std::chrono::steady_clock::now();
     this->backend_->computeLQApproximation(0, K_shot - 1);
+    this->backend_->computeQQApproximation(0, K_shot - 1);
     auto end = std::chrono::steady_clock::now();
     auto diff = end - start;
     if (debugPrint)
@@ -186,6 +189,8 @@ void MultipleShooting<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>:
     this->backend_->setInputBoxConstraintsForLQOCProblem();
     this->backend_->setStateBoxConstraintsForLQOCProblem();
     this->backend_->computeLQApproximation(K_shot, K - 1);
+    // TODO look into LQOCProblem two lines above
+    this->backend_->computeQQApproximation(K_shot, K - 1);
     auto end = std::chrono::steady_clock::now();
     auto diff = end - start;
     if (debugPrint)
@@ -235,6 +240,7 @@ bool MultipleShooting<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>:
 
     auto start = std::chrono::steady_clock::now();
     this->backend_->computeLQApproximation(0, K_shot - 1);
+    this->backend_->computeQQApproximation(0, K_shot - 1);
     auto end = std::chrono::steady_clock::now();
     auto diff = end - start;
     if (debugPrint)

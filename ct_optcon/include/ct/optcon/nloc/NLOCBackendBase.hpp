@@ -346,6 +346,9 @@ public:
     //! build LQ approximation around trajectory (linearize dynamics and general constraints, quadratize cost, etc)
     virtual void computeLQApproximation(size_t firstIndex, size_t lastIndex) = 0;
 
+    //! build QQ approximation around trajectory (quadratize dynamics and cost, linearize general constraints, etc)
+    virtual void computeQQApproximation(size_t firstIndex, size_t lastIndex) = 0;
+
     //! sets the box constraints for the entire time horizon including terminal stage
     void setInputBoxConstraintsForLQOCProblem();
     void setStateBoxConstraintsForLQOCProblem();
@@ -418,6 +421,20 @@ protected:
       \param k step k
     */
     void executeLQApproximation(size_t threadId, size_t k);
+
+
+    //! Computes the quadratic Dynamics and quadratic cost approximation at a specific point of the trajectory
+    /*!
+      This function calculates the quadratic dynamics approximation, i.e. matrices fo, fx, fu, fxx, fxu, and fuu in
+      \f$ \delta x_{n+1} = \delta x_n^{T} fxx_n \delta x_n + 2 * \delta x_n^{T} fxu_n \delta u_n + \delta u_n^{T} fuu_n \delta u_n + fx_n \delta x_n + fu_n \delta u_n + fo_n \f$
+      at a specific point of the trajectory. This function also calculates the quadratic costs as provided by the costFunction pointer.
+      and maps it into the coordinates of the QQ problem.
+
+      \param threadId the id of the worker thread
+      \param k step k
+    */
+    void executeQQApproximation(size_t threadId, size_t k);
+    
 
 
     //! Computes the linearized general constraints at a specific point of the trajectory

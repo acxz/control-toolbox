@@ -272,6 +272,70 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::co
 
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::computeQQApproximation(size_t firstIndex,
+    size_t lastIndex)
+{
+    // fill terminal cost
+    if (lastIndex == (static_cast<size_t>(this->K_) - 1))
+        this->initializeCostToGo();
+
+    /*
+	 * In special cases, this function may be called for a single index, e.g. for the unconstrained GNMS real-time iteration scheme.
+	 * Then, don't wake up workers, but do single-threaded computation for that single index, and return.
+	 */
+    if (lastIndex == firstIndex)
+    {
+#ifdef DEBUG_PRINT_MP
+        printString("[MP]: do single threaded QQ approximation for single index " + std::to_string(firstIndex) +
+                    ". Not waking up workers.");
+#endif  //DEBUG_PRINT_MP
+        this->executeQQApproximation(this->settings_.nThreads, firstIndex);
+        if (this->generalConstraints_[this->settings_.nThreads] != nullptr)
+            this->computeLinearizedConstraints(this->settings_.nThreads, firstIndex);
+        return;
+    }
+
+    /*
+	 * In case of multiple points to perform QQ-approximation, start multi-threading:
+	 */
+    Eigen::setNbThreads(1);  // disable Eigen multi-threading
+#ifdef DEBUG_PRINT_MP
+    printString("[MP]: Restricting Eigen to " + std::to_string(Eigen::nbThreads()) + " threads.");
+#endif  //DEBUG_PRINT_MP
+
+    kTaken_ = 0;
+    kCompleted_ = 0;
+    KMax_ = lastIndex;
+    KMin_ = firstIndex;
+
+#ifdef DEBUG_PRINT_MP
+    printString("[MP]: Waking up workers to do QQ approximation.");
+#endif  //DEBUG_PRINT_MP
+    // TODO: what is COMPUTE_LQ_PROBLEM?
+    workerTask_ = COMPUTE_QQ_PROBLEM;
+    workerWakeUpCondition_.notify_all();
+
+#ifdef DEBUG_PRINT_MP
+    printString("[MP]: Will sleep now until done with QQ approximation.");
+#endif  //DEBUG_PRINT_MP
+
+    std::unique_lock<std::mutex> waitLock(kCompletedMutex_);
+    kCompletedCondition_.wait(waitLock, [this] { return kCompleted_.load() > KMax_ - KMin_; });
+    waitLock.unlock();
+    workerTask_ = IDLE;
+#ifdef DEBUG_PRINT_MP
+    printString("[MP]: Woke up again, should have computed QQ approximation now.");
+#endif  //DEBUG_PRINT_MP
+
+
+    Eigen::setNbThreads(this->settings_.nThreadsEigen);  // restore Eigen multi-threading
+#ifdef DEBUG_PRINT_MP
+    printString("[MP]: Restoring " + std::to_string(Eigen::nbThreads()) + " Eigen threads.");
+#endif  //DEBUG_PRINT_MP
+}
+
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::computeLQProblemWorker(size_t threadId)
 {
     while (true)
@@ -299,6 +363,43 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::co
 #endif
 
         this->executeLQApproximation(threadId, KMax_ - k);
+
+        if (this->generalConstraints_[threadId] != nullptr)
+            this->computeLinearizedConstraints(threadId, KMax_ - k);  // linearize constraints backwards
+
+        kCompleted_++;
+    }
+}
+
+// TODO: Look into computeLQProblemWorker
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::computeQQProblemWorker(size_t threadId)
+{
+    while (true)
+    {
+        const size_t k = kTaken_++;
+
+        if (k > KMax_ - KMin_)
+        {
+#ifdef DEBUG_PRINT_MP
+            if ((k + 1) % 100 == 0)
+                printString("k > KMax_ - KMin_ with k =  " + std::to_string(k) + " and KMax_ is " +
+                            std::to_string(KMax_) + " and KMin_ is " + std::to_string(KMin_));
+#endif
+
+            //kCompleted_++;
+            if (kCompleted_.load() > KMax_ - KMin_)
+                kCompletedCondition_.notify_all();
+            return;
+        }
+
+#ifdef DEBUG_PRINT_MP
+        if ((k + 1) % 100 == 0)
+            printString("[Thread " + std::to_string(threadId) + "]: Building QQ problem for index k " +
+                        std::to_string(KMax_ - k));
+#endif
+
+        this->executeQQApproximation(threadId, KMax_ - k);
 
         if (this->generalConstraints_[threadId] != nullptr)
             this->computeLinearizedConstraints(threadId, KMax_ - k);  // linearize constraints backwards

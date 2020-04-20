@@ -80,6 +80,8 @@ bool SingleShooting<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::f
     this->backend_->setInputBoxConstraintsForLQOCProblem();
     this->backend_->setStateBoxConstraintsForLQOCProblem();
     this->backend_->computeLQApproximation(0, K - 1);
+    // TODO: what is LQOCProblem 2 lines above
+    this->backend_->computeQQApproximation(0, K - 1);
     auto end = std::chrono::steady_clock::now();
     auto diff = end - start;
     if (debugPrint)
