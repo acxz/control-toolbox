@@ -189,6 +189,48 @@ public:
     }
 };
 
+//! QQOC Solver settings
+/*!
+ * Settings for solving each quadratic-quadratic (constrained) sub-problem
+ */
+struct QQOCSolverSettings
+{
+public:
+    QQOCSolverSettings() : qqoc_debug_print(false), num_qqoc_iterations(10) {}
+
+    bool qqoc_debug_print;
+    int num_qqoc_iterations;  //! number of allowed sub-iterations of QQOC solver per NLOC main iteration
+
+    void print() const
+    {
+        std::cout << "======================= QQOCSolverSettings =====================" << std::endl;
+        std::cout << "num_qqoc_iterations: \t" << num_qqoc_iterations << std::endl;
+        std::cout << "qqoc_debug_print: \t" << qqoc_debug_print << std::endl;
+    }
+
+    void load(const std::string& filename, bool verbose = true, const std::string& ns = "qqoc_solver_settings")
+    {
+        if (verbose)
+            std::cout << "Trying to load QQOCSolverSettings config from " << filename << ": " << std::endl;
+
+        boost::property_tree::ptree pt;
+        boost::property_tree::read_info(filename, pt);
+
+        try
+        {
+            num_qqoc_iterations = pt.get<int>(ns + ".num_qqoc_iterations");
+        } catch (...)
+        {
+        }
+        try
+        {
+            qqoc_debug_print = pt.get<bool>(ns + ".qqoc_debug_print");
+        } catch (...)
+        {
+        }
+    }
+};
+
 
 /*!
  * \ingroup NLOptCon
@@ -218,6 +260,13 @@ public:
         HPIPM_SOLVER = 1
     };
 
+    //! the quadratic optimal control problem solver in the background
+    enum QQOCP_SOLVER
+    {
+        GNRICCATI_QUAD_SOLVER = 0,
+        HPIPM_QUAD_SOLVER = 1
+    };
+
     using APPROXIMATION = typename core::SensitivityApproximationSettings::APPROXIMATION;
 
     //! NLOptCon Settings default constructor
@@ -230,6 +279,7 @@ public:
           timeVaryingDiscretization(false),
           nlocp_algorithm(GNMS),
           lqocp_solver(GNRICCATI_SOLVER),
+          qqocp_solver(GNRICCATI_QUAD_SOLVER),
           loggingPrefix("alg"),
           epsilon(1e-5),
           dt(0.001),
@@ -257,6 +307,7 @@ public:
     bool timeVaryingDiscretization;
     NLOCP_ALGORITHM nlocp_algorithm;  //! which nonlinear optimal control algorithm is to be used
     LQOCP_SOLVER lqocp_solver;        //! the solver for the linear-quadratic optimal control problem
+    QQOCP_SOLVER qqocp_solver;        //! the solver for the quadratic-quadratic optimal control problem
     std::string loggingPrefix;        //! the prefix to be stored before the matfile name for logging
     double epsilon;                   //! Eigenvalue correction factor for Hessian regularization
     double dt;                        //! sampling time for the control input (seconds)
@@ -274,6 +325,7 @@ public:
         nThreadsEigen;  //! number of threads for eigen parallelization (applies both to MP and ST) Note. in order to activate Eigen parallelization, compile with '-fopenmp'
     LineSearchSettings lineSearchSettings;  //! the line search settings
     LQOCSolverSettings lqoc_solver_settings;
+    QQOCSolverSettings qqoc_solver_settings;
     bool debugPrint;
     bool printSummary;
     bool useSensitivityIntegrator;
@@ -315,6 +367,7 @@ public:
         std::cout << "time varying discretization: " << timeVaryingDiscretization << std::endl;
         std::cout << "nonlinear OCP algorithm: " << nlocAlgorithmToString.at(nlocp_algorithm) << std::endl;
         std::cout << "linear-quadratic OCP solver: " << lqocSolverToString.at(lqocp_solver) << std::endl;
+        std::cout << "quadratic-quadratic OCP solver: " << qqocSolverToString.at(qqocp_solver) << std::endl;
         std::cout << "dt:\t" << dt << std::endl;
         std::cout << "K_sim:\t" << K_sim << std::endl;
         std::cout << "K_shot:\t" << K_shot << std::endl;
@@ -338,6 +391,7 @@ public:
         lineSearchSettings.print();
 
         lqoc_solver_settings.print();
+        qqoc_solver_settings.print();
 
         std::cout << "===============================================================" << std::endl;
     }
@@ -528,6 +582,12 @@ public:
         } catch (...)
         {
         }
+        try
+        {
+            qqoc_solver_settings.load(filename, verbose, ns + ".qqoc_solver_settings");
+        } catch (...)
+        {
+        }
 
 
         try
@@ -595,6 +655,22 @@ public:
                 std::cout << "Invalid locp_solver specified in config, should be one of the following:" << std::endl;
 
                 for (auto it = stringToLqocSolver.begin(); it != stringToLqocSolver.end(); it++)
+                {
+                    std::cout << it->first << std::endl;
+                }
+
+                exit(-1);
+            }
+            std::string qocp_solverStr = pt.get<std::string>(ns + ".qocp_solver");
+            if (stringToQqocSolver.find(qocp_solverStr) != stringToQqocSolver.end())
+            {
+                qqocp_solver = stringToQqocSolver[qocp_solverStr];
+            }
+            else
+            {
+                std::cout << "Invalid qocp_solver specified in config, should be one of the following:" << std::endl;
+
+                for (auto it = stringToQqocSolver.begin(); it != stringToQqocSolver.end(); it++)
                 {
                     std::cout << it->first << std::endl;
                 }
@@ -682,6 +758,13 @@ private:
 
     std::map<std::string, LQOCP_SOLVER> stringToLqocSolver = {
         {"GNRICCATI_SOLVER", GNRICCATI_SOLVER}, {"HPIPM_SOLVER", HPIPM_SOLVER}};
+
+    //! mappings for quadratic-quadratic solver types
+    std::map<QQOCP_SOLVER, std::string> qqocSolverToString = {
+        {GNRICCATI_QUAD_SOLVER, "GNRICCATI_QUAD_SOLVER"}, {HPIPM_QUAD_SOLVER, "HPIPM_QUAD_SOLVER"}};
+
+    std::map<std::string, QQOCP_SOLVER> stringToQqocSolver = {
+        {"GNRICCATI_QUAD_SOLVER", GNRICCATI_QUAD_SOLVER}, {"HPIPM_QUAD_SOLVER", HPIPM_QUAD_SOLVER}};
 };
 }  // namespace optcon
 }  // namespace ct

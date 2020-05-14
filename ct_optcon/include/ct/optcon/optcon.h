@@ -16,6 +16,7 @@ Licensed under the BSD-2 license (see LICENSE file in main directory)
 #include "problem/ContinuousOptConProblem.h"
 #include "problem/DiscreteOptConProblem.h"
 #include "problem/LQOCProblem.hpp"
+#include "problem/QQOCProblem.hpp"
 #include "solver/NLOptConSettings.hpp"
 
 #include "system_interface/OptconSystemInterface.h"
@@ -31,6 +32,8 @@ Licensed under the BSD-2 license (see LICENSE file in main directory)
 #include "solver/OptConSolver.h"
 #include "solver/lqp/HPIPMInterface.hpp"
 #include "solver/lqp/GNRiccatiSolver.hpp"
+#include "solver/qqp/HPIPMInterface.hpp"
+#include "solver/qqp/GNRiccatiSolver.hpp"
 #include "solver/NLOptConSolver.hpp"
 
 #include "lqr/riccati/CARE.hpp"
@@ -58,9 +61,12 @@ Licensed under the BSD-2 license (see LICENSE file in main directory)
 
 #include "problem/OptConProblemBase-impl.h"
 #include "problem/LQOCProblem-impl.hpp"
+#include "problem/QQOCProblem-impl.hpp"
 
 #include "solver/lqp/GNRiccatiSolver-impl.hpp"
 #include "solver/lqp/HPIPMInterface-impl.hpp"
+#include "solver/qqp/GNRiccatiSolver-impl.hpp"
+#include "solver/qqp/HPIPMInterface-impl.hpp"
 #include "solver/NLOptConSolver-impl.hpp"
 
 #include "lqr/riccati/CARE-impl.hpp"

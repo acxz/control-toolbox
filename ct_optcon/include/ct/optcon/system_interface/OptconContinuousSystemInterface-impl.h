@@ -179,5 +179,21 @@ void OptconContinuousSystemInterface<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALA
     sensitivity_[threadId]->getAandB(x, u, x_next, n, subSteps, A, B);
 }
 
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR>
+void OptconContinuousSystemInterface<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR>::getQuadratizedDynamics(const state_vector_t& x,
+    const control_vector_t& u,
+    const state_vector_t& x_next,
+    const int n,
+    size_t subSteps,
+    state_matrix_t& fxx,
+    state_matrix_t& fxu,
+    state_control_matrix_t& fuu,
+    state_matrix_t& fx,
+    state_control_matrix_t& fu,
+    const size_t threadId)
+{
+    //sensitivity_quad_[threadId]->getQuadratizedDynamics(x, u, x_next, n, subSteps, fxx, fxu, fuu, fx, fu);
+}
+
 }  // namespace optcon
 }  // namespace ct

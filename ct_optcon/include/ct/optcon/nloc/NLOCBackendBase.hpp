@@ -11,9 +11,13 @@ Licensed under the BSD-2 license (see LICENSE file in main directory)
 #include <ct/optcon/solver/OptConSolver.h>
 
 #include <ct/optcon/problem/LQOCProblem.hpp>
+#include <ct/optcon/problem/QQOCProblem.hpp>
 
 #include <ct/optcon/solver/lqp/GNRiccatiSolver.hpp>
 #include <ct/optcon/solver/lqp/HPIPMInterface.hpp>
+
+#include <ct/optcon/solver/qqp/GNRiccatiSolver.hpp>
+#include <ct/optcon/solver/qqp/HPIPMInterface.hpp>
 
 #include <ct/optcon/solver/NLOptConSettings.hpp>
 
@@ -63,6 +67,9 @@ public:
 
     typedef LQOCProblem<STATE_DIM, CONTROL_DIM, SCALAR> LQOCProblem_t;
     typedef LQOCSolver<STATE_DIM, CONTROL_DIM, SCALAR> LQOCSolver_t;
+
+    typedef QQOCProblem<STATE_DIM, CONTROL_DIM, SCALAR> QQOCProblem_t;
+    typedef QQOCSolver<STATE_DIM, CONTROL_DIM, SCALAR> QQOCSolver_t;
 
     typedef ct::core::StateVectorArray<STATE_DIM, SCALAR> StateVectorArray;
     typedef std::shared_ptr<StateVectorArray> StateVectorArrayPtr;
@@ -311,9 +318,21 @@ public:
     virtual void finishSolveLQProblem(size_t endIndex);
 
     /*!
+     * the prepare Solve QQP Problem method is intended for a special use-case: unconstrained GNMS with pre-solving of the
+     */
+    virtual void prepareSolveQQProblem(size_t startIndex);
+
+    virtual void finishSolveQQProblem(size_t endIndex);
+
+    /*!
      * solve Full LQProblem, e.g. to be used with HPIPM or if we have a constrained problem
      */
     virtual void solveFullLQProblem();
+
+    /*!
+     * solve Full QQProblem, e.g. to be used with HPIPM or if we have a constrained problem
+     */
+    virtual void solveFullQQProblem();
 
     /**
      * @brief extract relevant quantities for the following rollout/solution update step from the LQ solver
@@ -352,6 +371,10 @@ public:
     //! sets the box constraints for the entire time horizon including terminal stage
     void setInputBoxConstraintsForLQOCProblem();
     void setStateBoxConstraintsForLQOCProblem();
+
+    //! sets the box constraints for the entire time horizon including terminal stage
+    void setInputBoxConstraintsForQQOCProblem();
+    void setStateBoxConstraintsForQQOCProblem();
 
     //! reset all defects to zero
     void resetDefects();
@@ -616,6 +639,12 @@ protected:
     //! shared pointer to the linear-quadratic optimal control solver, that solves above LQOCP
     std::shared_ptr<LQOCSolver<STATE_DIM, CONTROL_DIM, SCALAR>> lqocSolver_;
 
+    //! shared pointer to the quadratic-quadratic optimal control problem that is constructed by NLOC
+    std::shared_ptr<QQOCProblem<STATE_DIM, CONTROL_DIM, SCALAR>> qqocProblem_;
+
+    //! shared pointer to the quadratic-quadratic optimal control solver, that solves above QQOCP
+    std::shared_ptr<QQOCSolver<STATE_DIM, CONTROL_DIM, SCALAR>> qqocSolver_;
+
     //! pointer to instance of the system interface
     systemInterfacePtr_t systemInterface_;
 
@@ -630,6 +659,9 @@ protected:
 
     //! a counter used to identify lqp problems in derived classes, i.e. for thread management in MP
     size_t lqpCounter_;
+
+    //! a counter used to identify lqp problems in derived classes, i.e. for thread management in MP
+    size_t qqpCounter_;
 
     //! The policy. currently only for returning the result, should eventually replace L_ and u_ff_ (todo)
     NLOCBackendBase::Policy_t policy_;

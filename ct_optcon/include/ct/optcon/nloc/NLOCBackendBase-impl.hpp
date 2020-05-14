@@ -51,6 +51,7 @@ NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::NLOCB
       finalCostPrevious_(std::numeric_limits<SCALAR>::infinity()),
       alphaBest_(-1),
       lqocProblem_(new LQOCProblem<STATE_DIM, CONTROL_DIM, SCALAR>()),
+      qqocProblem_(new QQOCProblem<STATE_DIM, CONTROL_DIM, SCALAR>()),
       systemInterface_(systemInterface),
       inputBoxConstraints_(settings.nThreads + 1, nullptr),  // initialize constraints with null
       stateBoxConstraints_(settings.nThreads + 1, nullptr),  // initialize constraints with null
@@ -293,6 +294,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         computeBoxConstraintErrorOfTrajectory(settings_.nThreads, x_, u_ff_, e_box_norm_);
 
     setInputBoxConstraintsForLQOCProblem();
+    setInputBoxConstraintsForQQOCProblem();
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
@@ -315,6 +317,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         computeBoxConstraintErrorOfTrajectory(settings_.nThreads, x_, u_ff_, e_box_norm_);
 
     setStateBoxConstraintsForLQOCProblem();
+    setStateBoxConstraintsForQQOCProblem();
 }
 
 
@@ -414,6 +417,24 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     else
         throw std::runtime_error("Solver for Linear Quadratic Optimal Control Problem wrongly specified.");
 
+    // select the quadratic quadratic solver based on settings file
+    if (settings.qqocp_solver == NLOptConSettings::QQOCP_SOLVER::GNRICCATI_QUAD_SOLVER)
+    {
+        qqocSolver_ = std::shared_ptr<GNRiccatiSolverQQ<STATE_DIM, CONTROL_DIM, SCALAR>>(
+            new GNRiccatiSolverQQ<STATE_DIM, CONTROL_DIM, SCALAR>());
+    }
+    else if (settings.qqocp_solver == NLOptConSettings::QQOCP_SOLVER::HPIPM_QUAD_SOLVER)
+    {
+#ifdef HPIPM
+        qqocSolver_ =
+            std::shared_ptr<HPIPMInterface<STATE_DIM, CONTROL_DIM>>(new HPIPMInterface<STATE_DIM, CONTROL_DIM>());
+#else
+        throw std::runtime_error("HPIPM selected but not built.");
+#endif
+    }
+    else
+        throw std::runtime_error("Solver for Quadratic Quadratic Optimal Control Problem wrongly specified.");
+
     // set number of Eigen Threads (requires -fopenmp)
     if (settings_.nThreadsEigen > 1)
     {
@@ -424,6 +445,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     }
 
     lqocSolver_->configure(settings);
+    qqocSolver_->configure(settings);
 
     settings_ = settings;
 
@@ -745,7 +767,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     //! @warning it is important that the calculations are done with local variables x_ and u_ff_, they will only later be stored in the QQOCProblem
     // compute fxx_n, fxu_n, fuu_n, fx_n, fu_n
     // TODO: Implement getQuadDynamics (equivalent of getAandB)
-    systemInterface_->getQuadDynamics(x_[k], u_ff_[k], xShot_[k], (int)k, settings_.K_sim,
+    systemInterface_->getQuadratizedDynamics(x_[k], u_ff_[k], xShot_[k], (int)k, settings_.K_sim,
         p.fxx_[k], p.fxu_[k], p.fuu_[k], p.fx_[k], p.fu_[k], threadId);
 
     // compute dynamics offset term fo_n
@@ -797,6 +819,31 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::setInputBoxConstraintsForQQOCProblem()
+{
+    // set box constraints if there are any
+    if (inputBoxConstraints_[settings_.nThreads] != nullptr)
+    {
+        // check number of intermediate box constraints
+        const int nb_u_intermediate =
+            inputBoxConstraints_[settings_.nThreads]->getJacobianInputNonZeroCountIntermediate();
+
+        if (nb_u_intermediate > 0)
+        {
+            Eigen::VectorXi u_sparsity_row, u_sparsity_col_intermediate;
+
+            inputBoxConstraints_[settings_.nThreads]->sparsityPatternInputIntermediate(
+                u_sparsity_row, u_sparsity_col_intermediate);
+
+            qqocProblem_->setInputBoxConstraints(nb_u_intermediate,
+                inputBoxConstraints_[settings_.nThreads]->getLowerBoundsIntermediate(),
+                inputBoxConstraints_[settings_.nThreads]->getUpperBoundsIntermediate(), u_sparsity_col_intermediate,
+                u_ff_);
+        }
+    }
+}
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::setStateBoxConstraintsForLQOCProblem()
 {
     if (stateBoxConstraints_[settings_.nThreads] != nullptr)
@@ -833,6 +880,45 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         }
     }
 }
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::setStateBoxConstraintsForQQOCProblem()
+{
+    if (stateBoxConstraints_[settings_.nThreads] != nullptr)
+    {
+        const int nb_x_intermediate =
+            stateBoxConstraints_[settings_.nThreads]->getJacobianStateNonZeroCountIntermediate();
+
+        if (nb_x_intermediate > 0)
+        {
+            Eigen::VectorXi x_sparsity_row, x_sparsity_col_intermediate;
+
+            stateBoxConstraints_[settings_.nThreads]->sparsityPatternStateIntermediate(
+                x_sparsity_row, x_sparsity_col_intermediate);
+
+            qqocProblem_->setIntermediateStateBoxConstraints(nb_x_intermediate,
+                stateBoxConstraints_[settings_.nThreads]->getLowerBoundsIntermediate(),
+                stateBoxConstraints_[settings_.nThreads]->getUpperBoundsIntermediate(), x_sparsity_col_intermediate,
+                x_);
+        }
+
+        // check number of terminal box constraints
+        const int nb_x_terminal = stateBoxConstraints_[settings_.nThreads]->getJacobianStateNonZeroCountTerminal();
+
+        if (nb_x_terminal > 0)
+        {
+            Eigen::VectorXi x_sparsity_row_terminal, x_sparsity_col_terminal;
+
+            stateBoxConstraints_[settings_.nThreads]->sparsityPatternStateTerminal(
+                x_sparsity_row_terminal, x_sparsity_col_terminal);
+
+            qqocProblem_->setTerminalBoxConstraints(nb_x_terminal,
+                stateBoxConstraints_[settings_.nThreads]->getLowerBoundsTerminal(),
+                stateBoxConstraints_[settings_.nThreads]->getUpperBoundsTerminal(), x_sparsity_col_terminal, x_.back());
+        }
+    }
+}
+
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::computeLinearizedConstraints(
@@ -1347,6 +1433,29 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         throw std::runtime_error("unknown solver type in prepareSolveLQProblem()");
 }
 
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::prepareSolveQQProblem(size_t startIndex)
+{
+    qqpCounter_++;
+
+    // if solver is HPIPM, there's nothing to prepare
+    if (settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::HPIPM_QUAD_SOLVER)
+    {
+        // do nothing
+    }
+    // if solver is GNRiccati - we iterate backward up to the first stage
+    else if (settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::GNRICCATI_QUAD_SOLVER)
+    {
+        qqocSolver_->setProblem(qqocProblem_);
+
+        //iterate backward up to first stage
+        for (int i = this->qqocProblem_->getNumberOfStages() - 1; i >= static_cast<int>(startIndex); i--)
+            qqocSolver_->solveSingleStage(i);
+    }
+    else
+        throw std::runtime_error("unknown solver type in prepareSolveQQProblem()");
+}
+
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::finishSolveLQProblem(size_t endIndex)
@@ -1371,6 +1480,29 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         throw std::runtime_error("unknown solver type in finishSolveLQProblem()");
 }
 
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::finishSolveQQProblem(size_t endIndex)
+{
+    qqpCounter_++;
+
+    // if solver is HPIPM, solve the full problem
+    if (settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::HPIPM_QUAD_SOLVER)
+    {
+        solveFullQQProblem();
+    }
+    else if (settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::GNRICCATI_QUAD_SOLVER)
+    {
+        qqocSolver_->setProblem(qqocProblem_);
+
+        for (int i = endIndex; i >= 0; i--)
+            qqocSolver_->solveSingleStage(i);
+
+        qqocSolver_->computeStatesAndControls();
+    }
+    else
+        throw std::runtime_error("unknown solver type in finishSolveQQProblem()");
+}
+
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::solveFullLQProblem()
@@ -1380,6 +1512,16 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     lqocSolver_->setProblem(lqocProblem_);
 
     lqocSolver_->solve();
+}
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
+void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::solveFullQQProblem()
+{
+    qqpCounter_++;
+
+    qqocSolver_->setProblem(qqocProblem_);
+
+    qqocSolver_->solve();
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>

@@ -63,6 +63,7 @@ private:
         LINE_SEARCH,
         ROLLOUT_SHOTS,
         COMPUTE_LQ_PROBLEM,
+        COMPUTE_QQ_PROBLEM,
         SHUTDOWN
     };
 
@@ -95,6 +96,14 @@ private:
 	  \param k step k
 	 */
     void computeLQProblemWorker(size_t threadId);
+
+    //! Creates the quadratic quadratic problem
+    /*!
+	  This function calculates the quadratic costs as provided by the costFunction pointer as well as the quadratized dynamics.
+
+	  \param k step k
+	 */
+    void computeQQProblemWorker(size_t threadId);
 
     //! rolls out a shot and computes the defect
     void rolloutShotWorker(size_t threadId);

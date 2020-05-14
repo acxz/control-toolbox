@@ -71,6 +71,33 @@ public:
         state_control_matrix_t& B,
         const size_t threadId) override;
 
+    // TODO: Need to modify to ensure we the right types of all the matrices, for now just focus on software architecture
+    //! retrieve discrete-time quadratic system matrices fxx, fxu, fuu, fx, fu.
+    /*!
+     * @param x	the state setpoint
+     * @param u the control setpoint
+     * @param x_next the next state
+     * @param n the time setpoint
+     * @param subSteps number of substeps of trajectory for which to get the sensitivity for
+     * @param fxx the resulting quadratic system matrix fxx
+     * @param fxu the resulting quadratic system matrix fxu
+     * @param fuu the resulting quadratic system matrix fuu
+     * @param fx the resulting quadratic system matrix fx
+     * @param fu the resulting quadratic system matrix fu
+     * @param threadId which thread specific instantiations to use
+     */
+    virtual void getQuadratizedDynamics(const state_vector_t& x,
+        const control_vector_t& u,
+        const state_vector_t& x_next,
+        const int n,
+        size_t subSteps,
+        state_matrix_t& fxx,
+        state_matrix_t& fxu,
+        state_control_matrix_t& fuu,
+        state_matrix_t& fx,
+        state_control_matrix_t& fu,
+        const size_t threadId) override;
+
     //! propagate discrete-time dynamics
     /*!
      * @param state start state to propagate from

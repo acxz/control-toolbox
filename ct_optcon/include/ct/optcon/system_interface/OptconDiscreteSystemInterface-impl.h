@@ -30,6 +30,22 @@ void OptconDiscreteSystemInterface<STATE_DIM, CONTROL_DIM, SCALAR>::getAandB(con
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, typename SCALAR>
+void OptconDiscreteSystemInterface<STATE_DIM, CONTROL_DIM, SCALAR>::getQuadratizedDynamics(const state_vector_t& x,
+    const control_vector_t& u,
+    const state_vector_t& x_next,
+    const int n,
+    size_t subSteps,
+    state_matrix_t& fxx,
+    state_matrix_t& fxu,
+    state_control_matrix_t& fuu,
+    state_matrix_t& fx,
+    state_control_matrix_t& fu,
+    const size_t threadId)
+{
+    this->linearSystems_[threadId]->getQuadratizedDynamics(x, u, x_next, n, subSteps, fxx, fxu, fuu, fx, fu);
+}
+
+template <size_t STATE_DIM, size_t CONTROL_DIM, typename SCALAR>
 void OptconDiscreteSystemInterface<STATE_DIM, CONTROL_DIM, SCALAR>::propagateControlledDynamics(
     const state_vector_t& state,
     const time_t n,
