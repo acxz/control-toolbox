@@ -260,7 +260,7 @@ void HPIPMInterfaceQQ<STATE_DIM, CONTROL_DIM>::computeFeedbackMatrices()
     // step2: compute G[0]
     Eigen::Matrix<double, control_dim, state_dim> G;
     G = p.P_[0];
-    G.noalias() += p.B_[0].transpose() * S1 * p.A_[0];
+    G.noalias() += p.fu_[0].transpose() * S1 * p.fx_[0];
 
     // step3: compute K[0] = H.inverse() * G
     this->L_[0] = (-Lr0_inv.transpose() * Lr0_inv * G);
@@ -311,7 +311,7 @@ void HPIPMInterfaceQQ<STATE_DIM, CONTROL_DIM>::setProblemImpl(
     // If the number of stages has changed, however, the problem needs to be re-built:
 
     // setup unconstrained part of problem
-    setupCostAndDynamics(qqocProblem->A_, qqocProblem->B_, qqocProblem->b_, qqocProblem->P_, qqocProblem->qv_,
+    setupCostAndDynamics(qqocProblem->fx_, qqocProblem->fu_, qqocProblem->fo_, qqocProblem->P_, qqocProblem->qv_,
         qqocProblem->Q_, qqocProblem->rv_, qqocProblem->R_);
 
     if (dimsChanged)

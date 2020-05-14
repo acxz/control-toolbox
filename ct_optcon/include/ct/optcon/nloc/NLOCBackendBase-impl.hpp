@@ -427,7 +427,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     {
 #ifdef HPIPM
         qqocSolver_ =
-            std::shared_ptr<HPIPMInterface<STATE_DIM, CONTROL_DIM>>(new HPIPMInterface<STATE_DIM, CONTROL_DIM>());
+            std::shared_ptr<HPIPMInterfaceQQ<STATE_DIM, CONTROL_DIM>>(new HPIPMInterfaceQQ<STATE_DIM, CONTROL_DIM>());
 #else
         throw std::runtime_error("HPIPM selected but not built.");
 #endif
