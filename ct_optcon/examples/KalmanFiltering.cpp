@@ -181,7 +181,10 @@ int main(int argc, char** argv)
     ct::core::plot::xlabel("time [sec]");
     ct::core::plot::legend();
 
+    std::cout << "hi1" << std::endl;
     ct::core::plot::show();
+
+    std::cout << "hi2" << std::endl;
 #else  // print results to command line
     for (size_t i = 0; i < states_est.size(); ++i)
         std::cout << "State\t\tState_est\n"

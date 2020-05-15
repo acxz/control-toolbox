@@ -246,6 +246,8 @@ public:
         GNMS = 0,   //! Gauss-Newton Multiple Shooting (shooting interval = control interval)
         ILQR,       //! Classical iLQR (1 shooting interval equal to problem horizon)
         MS_ILQR,    //! multiple-shooting iLQR
+        DDP,        //! Classical DDP (1 shooting interval equal to problem horizon)
+        MS_DDP,     //! Classical DDP (1 shooting interval equal to problem horizon)
         SS_OL,      //! Classical (open-loop) Single Shooting
         SS_CL,      //! Closed-loop single shooting
         GNMS_M_OL,  //! GNMS(M) with open-loop shooting
@@ -427,6 +429,13 @@ public:
         if ((K_shot > 1) && (nlocp_algorithm == ILQR))
         {
             std::cout << "Invalid parameter: for iLQR K_shot needs to be 1. K_shot currently is " << K_shot
+                      << std::endl;
+            return false;
+        }
+        // TODO need thorough check if this is really the case ....
+        if ((K_shot > 1) && (nlocp_algorithm == DDP))
+        {
+            std::cout << "Invalid parameter: for DDP K_shot needs to be 1. K_shot currently is " << K_shot
                       << std::endl;
             return false;
         }
@@ -739,17 +748,18 @@ private:
     //! mappings for algorithm types
     std::map<NLOCP_ALGORITHM, std::string> nlocAlgorithmToString = {{GNMS, "GNMS (Gauss-Newton Multiple Shooting)"},
         {ILQR, "ILQR (iterative linear-quadratic optimal control)"}, {MS_ILQR, "MS_ILQR (multiple-shooting iLQR)"},
+        {DDP, "DDP (iterative quadratic-quadratic optimal control)"}, {MS_DDP, "MS_DDP (multiple-shooting DDP)"},
         {SS_OL, "SS_OL (open-loop Single Shooting)"}, {SS_CL, "SS_CL (closed-loop Single Shooting)"},
         {GNMS_M_OL, "GNMS_M_OL (GNMS(M) with open-loop shooting)"},
         {GNMS_M_CL, "GNMS_M_CL (GNMS(M) with closed-loop shooting)"}};
 
     std::map<std::string, NLOCP_ALGORITHM> stringToNlocAlgorithm = {{"GNMS", GNMS}, {"ILQR", ILQR},
-        {"MS_ILQR", MS_ILQR}, {"SS_OL", SS_OL}, {"SS_CL", SS_CL}, {"GNMS_M_OL", GNMS_M_OL}, {"GNMS_M_CL", GNMS_M_CL}};
+        {"MS_ILQR", MS_ILQR}, {"DDP", DDP}, {"MS_DDP", MS_DDP}, {"SS_OL", SS_OL}, {"SS_CL", SS_CL}, {"GNMS_M_OL", GNMS_M_OL}, {"GNMS_M_CL", GNMS_M_CL}};
 
-    std::map<NLOCP_ALGORITHM, bool> nlocAlgorithmToClosedLoopShooting = {{GNMS, false}, {ILQR, true}, {MS_ILQR, true},
+    std::map<NLOCP_ALGORITHM, bool> nlocAlgorithmToClosedLoopShooting = {{GNMS, false}, {ILQR, true}, {MS_ILQR, true}, {DDP, true}, {MS_DDP, true},
         {SS_OL, false}, {SS_CL, true}, {GNMS_M_OL, false}, {GNMS_M_CL, true}};
 
-    std::map<NLOCP_ALGORITHM, bool> nlocAlgorithmToSingleShooting = {{GNMS, false}, {ILQR, true}, {MS_ILQR, false},
+    std::map<NLOCP_ALGORITHM, bool> nlocAlgorithmToSingleShooting = {{GNMS, false}, {ILQR, true}, {MS_ILQR, false}, {DDP, true}, {MS_DDP, false},
         {SS_OL, true}, {SS_CL, true}, {GNMS_M_OL, false}, {GNMS_M_CL, false}};
 
     //! mappings for linear-quadratic solver types

@@ -78,6 +78,7 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
     size_t uniqueProcessID = 0;
     size_t iteration_local = this->iteration_;
     size_t lqpCounter_local = this->lqpCounter_;
+    size_t qqpCounter_local = this->qqpCounter_;
 
 
     while (workersActive_)
@@ -85,11 +86,15 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
         workerTask_local = workerTask_.load();
         iteration_local = this->iteration_;
         lqpCounter_local = this->lqpCounter_;
+        qqpCounter_local = this->qqpCounter_;
 
 #ifdef DEBUG_PRINT_MP
         printString("[Thread " + std::to_string(threadId) + "]: previous procId: " + std::to_string(uniqueProcessID) +
                     ", current procId: " +
                     std::to_string(generateUniqueProcessID(iteration_local, (int)workerTask_local, lqpCounter_local)));
+        printString("[Thread " + std::to_string(threadId) + "]: previous procId: " + std::to_string(uniqueProcessID) +
+                    ", current procId: " +
+                    std::to_string(generateUniqueProcessID(iteration_local, (int)workerTask_local, qqpCounter_local)));
 #endif
 
 
@@ -123,6 +128,37 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
 #endif  // DEBUG_PRINT_MP
         }
 
+        /*!
+         * We want to put the worker to sleep if
+         * - the workerTask_ is IDLE
+         * - or we are finished but workerTask_ is not yet reset, thus the process ID is still the same
+         * */
+        if (workerTask_local == IDLE ||
+            uniqueProcessID == generateUniqueProcessID(iteration_local, (int)workerTask_local, qqpCounter_local))
+        {
+#ifdef DEBUG_PRINT_MP
+            printString("[Thread " + std::to_string(threadId) + "]: going to sleep !");
+#endif
+
+            // sleep until the state is not IDLE any more and we have a different process ID than before
+            std::unique_lock<std::mutex> waitLock(workerWakeUpMutex_);
+
+            while (workerTask_ == IDLE || (uniqueProcessID == generateUniqueProcessID(this->iteration_,
+                                                                  (int)workerTask_.load(), this->qqpCounter_)))
+            {
+                workerWakeUpCondition_.wait(waitLock);
+            }
+            waitLock.unlock();
+
+            workerTask_local = workerTask_.load();
+            iteration_local = this->iteration_;
+            qqpCounter_local = this->qqpCounter_;
+
+#ifdef DEBUG_PRINT_MP
+            printString("[Thread " + std::to_string(threadId) + "]: woke up !");
+#endif  // DEBUG_PRINT_MP
+        }
+
         if (!workersActive_)
         {
 #ifdef DEBUG_PRINT_MP
@@ -141,6 +177,7 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
 #endif  // DEBUG_PRINT_MP
                 lineSearchWorker(threadId);
                 uniqueProcessID = generateUniqueProcessID(iteration_local, LINE_SEARCH, lqpCounter_local);
+                uniqueProcessID = generateUniqueProcessID(iteration_local, LINE_SEARCH, qqpCounter_local);
                 break;
             }
             case ROLLOUT_SHOTS:
@@ -150,6 +187,7 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
 #endif  // DEBUG_PRINT_MP
                 rolloutShotWorker(threadId);
                 uniqueProcessID = generateUniqueProcessID(iteration_local, ROLLOUT_SHOTS, lqpCounter_local);
+                uniqueProcessID = generateUniqueProcessID(iteration_local, ROLLOUT_SHOTS, qqpCounter_local);
                 break;
             }
             case COMPUTE_LQ_PROBLEM:
@@ -159,6 +197,15 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::th
 #endif  // DEBUG_PRINT_MP
                 computeLQProblemWorker(threadId);
                 uniqueProcessID = generateUniqueProcessID(iteration_local, COMPUTE_LQ_PROBLEM, lqpCounter_local);
+                break;
+            }
+            case COMPUTE_QQ_PROBLEM:
+            {
+#ifdef DEBUG_PRINT_MP
+                printString("[Thread " + std::to_string(threadId) + "]: now doing QQ approximation !");
+#endif  // DEBUG_PRINT_MP
+                computeQQProblemWorker(threadId);
+                uniqueProcessID = generateUniqueProcessID(iteration_local, COMPUTE_QQ_PROBLEM, qqpCounter_local);
                 break;
             }
             case SHUTDOWN:
@@ -311,7 +358,6 @@ void NLOCBackendMP<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::co
 #ifdef DEBUG_PRINT_MP
     printString("[MP]: Waking up workers to do QQ approximation.");
 #endif  //DEBUG_PRINT_MP
-    // TODO: what is COMPUTE_LQ_PROBLEM?
     workerTask_ = COMPUTE_QQ_PROBLEM;
     workerWakeUpCondition_.notify_all();
 

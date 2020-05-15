@@ -1,6 +1,6 @@
 ilqr
 {
-    nlocp_algorithm GNMS
+    nlocp_algorithm ILQR
     integrator EulerCT
     useSensitivityIntegrator false
     discretization Forward_euler
@@ -19,10 +19,11 @@ ilqr
     nThreads 1
     nThreadsEigen 1
     locp_solver GNRICCATI_SOLVER
+    qocp_solver GNRICCATI_QUAD_SOLVER
     printSummary true
-    debugPrint false 
-    logToMatlab 0   
-    
+    debugPrint false
+    logToMatlab 0
+
     line_search
     {
         type NONE
@@ -37,5 +38,58 @@ ilqr
     {
         lqoc_debug_print        false
         num_lqoc_iterations  	20
+    }
+    qqoc_solver_settings
+    {
+        qqoc_debug_print        false
+        num_qqoc_iterations  	20
+    }
+}
+
+ddp
+{
+    nlocp_algorithm DDP
+    integrator EulerCT
+    useSensitivityIntegrator false
+    discretization Forward_euler
+    timeVaryingDiscretization false
+    dt 0.01
+    K_sim 1
+    K_shot 1
+    epsilon 0
+    max_iterations 12
+    fixedHessianCorrection false
+    recordSmallestEigenvalue false
+    min_cost_improvement 1e-5
+    maxDefectSum 1e-5
+    meritFunctionRho 0.0
+    meritFunctionRhoConstraints 0.0
+    nThreads 1
+    nThreadsEigen 1
+    locp_solver GNRICCATI_SOLVER
+    qocp_solver GNRICCATI_QUAD_SOLVER
+    printSummary true
+    debugPrint false
+    logToMatlab 0
+
+    line_search
+    {
+        type NONE
+        adaptive false
+        maxIterations 10
+        alpha_0 1.0
+        n_alpha 0.5
+        debugPrint true
+    }
+
+    lqoc_solver_settings
+    {
+        lqoc_debug_print        false
+        num_lqoc_iterations  	20
+    }
+    qqoc_solver_settings
+    {
+        qqoc_debug_print        false
+        num_qqoc_iterations  	20
     }
 }

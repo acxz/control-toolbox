@@ -224,6 +224,11 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     lqocProblem_->setZero();
 
     lqocSolver_->setProblem(lqocProblem_);
+
+    qqocProblem_->changeNumStages(K_);
+    qqocProblem_->setZero();
+
+    qqocSolver_->setProblem(qqocProblem_);
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
@@ -347,6 +352,13 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         lqocProblem_->D_[i].resize(lqocProblem_->ng_[i], CONTROL_DIM);
         lqocProblem_->d_lb_[i].resize(lqocProblem_->ng_[i], 1);
         lqocProblem_->d_ub_[i].resize(lqocProblem_->ng_[i], 1);
+
+        qqocProblem_->ng_[i] = generalConstraints_[settings_.nThreads]->getIntermediateConstraintsCount();
+
+        qqocProblem_->C_[i].resize(qqocProblem_->ng_[i], STATE_DIM);
+        qqocProblem_->D_[i].resize(qqocProblem_->ng_[i], CONTROL_DIM);
+        qqocProblem_->d_lb_[i].resize(qqocProblem_->ng_[i], 1);
+        qqocProblem_->d_ub_[i].resize(qqocProblem_->ng_[i], 1);
     }
 
     // terminal stage
@@ -357,6 +369,15 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     lqocProblem_->d_ub_[K_].resize(lqocProblem_->ng_[K_], 1);
 
     lqocSolver_->setProblem(lqocProblem_);
+
+    // terminal stage
+    qqocProblem_->ng_[K_] = generalConstraints_[settings_.nThreads]->getTerminalConstraintsCount();
+    qqocProblem_->C_[K_].resize(qqocProblem_->ng_[K_], STATE_DIM);
+    qqocProblem_->D_[K_].resize(qqocProblem_->ng_[K_], CONTROL_DIM);
+    qqocProblem_->d_lb_[K_].resize(qqocProblem_->ng_[K_], 1);
+    qqocProblem_->d_ub_[K_].resize(qqocProblem_->ng_[K_], 1);
+
+    qqocSolver_->setProblem(qqocProblem_);
 
     // TODO can we do this multi-threaded?
     if (iteration_ > 0 && (settings_.lineSearchSettings.type != LineSearchSettings::TYPE::NONE))
@@ -750,15 +771,14 @@ template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, type
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::executeQQApproximation(size_t threadId,
     size_t k)
 {
-    // TODO: create a QQOCProblem
     QQOCProblem_t& p = *qqocProblem_;
     const scalar_t& dt = settings_.dt;
 
     assert(qqocProblem_ != nullptr);
 
-    assert(qqocProblem_->fxx_.size() > k);
-    assert(qqocProblem_->fxu_.size() > k);
-    assert(qqocProblem_->fuu_.size() > k);
+    //assert(qqocProblem_->fxx_.size() > k);
+    //assert(qqocProblem_->fxu_.size() > k);
+    //assert(qqocProblem_->fuu_.size() > k);
     assert(qqocProblem_->fx_.size() > k);
     assert(qqocProblem_->fu_.size() > k);
     assert(qqocProblem_->fo_.size() > k);
@@ -929,12 +949,14 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     if (generalConstraints_[threadId] != nullptr)
     {
         LQOCProblem_t& p = *lqocProblem_;
+        QQOCProblem_t& pq = *qqocProblem_;
         const scalar_t& dt = settings_.dt;
 
         // treat general constraints
         generalConstraints_[threadId]->setCurrentStateAndControl(x_[k], u_ff_[k], dt * k);
 
         p.ng_[k] = generalConstraints_[threadId]->getIntermediateConstraintsCount();
+        pq.ng_[k] = generalConstraints_[threadId]->getIntermediateConstraintsCount();
         if (p.ng_[k] > 0)
         {
             p.C_[k] = generalConstraints_[threadId]->jacobianStateIntermediate();
@@ -946,6 +968,17 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
             p.d_lb_[k] = generalConstraints_[threadId]->getLowerBoundsIntermediate() - g_eval;
             p.d_ub_[k] = generalConstraints_[threadId]->getUpperBoundsIntermediate() - g_eval;
         }
+        if (pq.ng_[k] > 0)
+        {
+            pq.C_[k] = generalConstraints_[threadId]->jacobianStateIntermediate();
+            pq.D_[k] = generalConstraints_[threadId]->jacobianInputIntermediate();
+
+            Eigen::Matrix<SCALAR, Eigen::Dynamic, 1> g_eval = generalConstraints_[threadId]->evaluateIntermediate();
+
+            // rewrite constraint boundaries in relative coordinates as required by LQOC problem
+            pq.d_lb_[k] = generalConstraints_[threadId]->getLowerBoundsIntermediate() - g_eval;
+            pq.d_ub_[k] = generalConstraints_[threadId]->getUpperBoundsIntermediate() - g_eval;
+        }
     }
 }
 
@@ -953,6 +986,7 @@ template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, type
 void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::initializeCostToGo()
 {
     LQOCProblem_t& p = *lqocProblem_;
+    QQOCProblem_t& pq = *qqocProblem_;
 
     // feed current state and control to cost function
     costFunctions_[settings_.nThreads]->setCurrentStateAndControl(x_[K_], control_vector_t::Zero(), settings_.dt * K_);
@@ -962,10 +996,17 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     p.qv_[K_] = costFunctions_[settings_.nThreads]->stateDerivativeTerminal();
     // p.q_[K_] = ... // omitted since not needed in GNMS/ILQR -- WARNING, potentially implement when using a different QP solver
 
+    // derivative of terminal cost with respect to state
+    pq.Q_[K_] = costFunctions_[settings_.nThreads]->stateSecondDerivativeTerminal();
+    pq.qv_[K_] = costFunctions_[settings_.nThreads]->stateDerivativeTerminal();
+    // p.q_[K_] = ... // omitted since not needed in GNMS/ILQR -- WARNING, potentially implement when using a different QP solver
+
     // init terminal general constraints, if any
     if (generalConstraints_[settings_.nThreads] != nullptr)
     {
         p.ng_[K_] = generalConstraints_[settings_.nThreads]->getTerminalConstraintsCount();
+        pq.ng_[K_] = generalConstraints_[settings_.nThreads]->getTerminalConstraintsCount();
+        
         if (p.ng_[K_] > 0)
         {
             p.C_[K_] = generalConstraints_[settings_.nThreads]->jacobianStateTerminal();
@@ -976,6 +1017,18 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
 
             p.d_lb_[K_] = generalConstraints_[settings_.nThreads]->getLowerBoundsTerminal() - g_eval;
             p.d_ub_[K_] = generalConstraints_[settings_.nThreads]->getUpperBoundsTerminal() - g_eval;
+        }
+
+        if (pq.ng_[K_] > 0)
+        {
+            pq.C_[K_] = generalConstraints_[settings_.nThreads]->jacobianStateTerminal();
+            pq.D_[K_] = generalConstraints_[settings_.nThreads]->jacobianInputTerminal();
+
+            Eigen::Matrix<SCALAR, Eigen::Dynamic, 1> g_eval =
+                generalConstraints_[settings_.nThreads]->evaluateTerminal();
+
+            pq.d_lb_[K_] = generalConstraints_[settings_.nThreads]->getLowerBoundsTerminal() - g_eval;
+            pq.d_ub_[K_] = generalConstraints_[settings_.nThreads]->getUpperBoundsTerminal() - g_eval;
         }
     }
 }
@@ -997,6 +1050,11 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     if (settings_.recordSmallestEigenvalue && settings_.lqocp_solver == Settings_t::LQOCP_SOLVER::GNRICCATI_SOLVER)
     {
         smallestEigenvalue = lqocSolver_->getSmallestEigenvalue();
+    }
+
+    if (settings_.recordSmallestEigenvalue && settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::GNRICCATI_QUAD_SOLVER)
+    {
+        smallestEigenvalue = qqocSolver_->getSmallestEigenvalue();
     }
 
 
@@ -1023,6 +1081,14 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     {
         std::cout << std::setprecision(15) << "smallest eigenvalue this iteration: " << smallestEigenvalue << std::endl;
     }
+
+    //! @todo the printing of the smallest eigenvalue is hacky
+    if (settings_.printSummary && settings_.recordSmallestEigenvalue &&
+        settings_.qqocp_solver == Settings_t::QQOCP_SOLVER::GNRICCATI_QUAD_SOLVER)
+    {
+        std::cout << std::setprecision(15) << "smallest eigenvalue this iteration: " << smallestEigenvalue << std::endl;
+    }
+
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
@@ -1035,6 +1101,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         std::cout << "Logging to Matlab" << std::endl;
 
         LQOCProblem_t& p = *lqocProblem_;
+        QQOCProblem_t& pq = *qqocProblem_;
 
         matFile_.open(settings_.loggingPrefix + "Log" + std::to_string(iteration) + ".mat");
 
@@ -1056,6 +1123,15 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
         matFile_.put("rv", p.rv_.toImplementation());
         matFile_.put("R", p.R_.toImplementation());
         matFile_.put("q", p.q_.toEigenTrajectory());
+
+        matFile_.put("fx", pq.fx_.toImplementation());
+        matFile_.put("fu", pq.fu_.toImplementation());
+        matFile_.put("qv", pq.qv_.toImplementation());
+        matFile_.put("Q", pq.Q_.toImplementation());
+        matFile_.put("P", pq.P_.toImplementation());
+        matFile_.put("rv", pq.rv_.toImplementation());
+        matFile_.put("R", pq.R_.toImplementation());
+        matFile_.put("q", pq.q_.toEigenTrajectory());
 
         matFile_.put("lx_norm", lx_norm_);
         matFile_.put("lu_norm", lu_norm_);
@@ -1541,6 +1617,8 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     A = lqocProblem_->A_;
     B = lqocProblem_->B_;
     b = lqocProblem_->b_;
+
+    //TODO corresponding QQ
 }
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
@@ -1579,6 +1657,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
     *  case: GNMS(M):                               compute and retrieve dx, du
     *  case: Classical (open-loop) Single Shooting: compute and retrieve dx, du;  
     *  case: iLQR:                                  compute and retrieve lv, L
+    *  case: DDP:                                   compute and retrieve lv, L
     *  case: Multiple-Shooting-iLQR:                compute and retrieve dx, lv, L
     *  case: Closed-loop Single Shooting:           compute and retrieve dx, du, L
     *  case: Closed-loop GNMS(M):                   compute and retrieve dx, du, L
@@ -1593,6 +1672,7 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
             delta_u_ff_ = lqocSolver_->getSolutionControl();
             delta_x_ = lqocSolver_->getSolutionState();
             delta_x_ref_lqr_.setConstant(ct::core::StateVector<STATE_DIM, SCALAR>::Zero());
+
             break;
         }
         case NLOptConSettings::NLOCP_ALGORITHM::ILQR:
@@ -1614,6 +1694,27 @@ void NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::
             delta_u_ff_ = lqocSolver_->get_lv();
             lqocSolver_->computeFeedbackMatrices();
             L_ = lqocSolver_->getSolutionFeedback();
+            break;
+        }
+        case NLOptConSettings::NLOCP_ALGORITHM::DDP:
+        {
+            qqocSolver_->compute_lv();
+            delta_u_ff_ = qqocSolver_->get_lv() - qqocSolver_->get_lv();
+            qqocSolver_->computeFeedbackMatrices();
+            L_ = qqocSolver_->getSolutionFeedback();
+            delta_x_.setConstant(ct::core::StateVector<STATE_DIM, SCALAR>::Zero());
+            delta_x_ref_lqr_.setConstant(ct::core::StateVector<STATE_DIM, SCALAR>::Zero());
+            break;
+        }
+        case NLOptConSettings::NLOCP_ALGORITHM::MS_DDP:
+        {
+            qqocSolver_->computeStatesAndControls();
+            delta_x_ = qqocSolver_->getSolutionState();
+            delta_x_ref_lqr_.setConstant(ct::core::StateVector<STATE_DIM, SCALAR>::Zero());
+            qqocSolver_->compute_lv();
+            delta_u_ff_ = qqocSolver_->get_lv();
+            qqocSolver_->computeFeedbackMatrices();
+            L_ = qqocSolver_->getSolutionFeedback();
             break;
         }
         case NLOptConSettings::NLOCP_ALGORITHM::SS_CL:
@@ -1743,6 +1844,7 @@ NLOCBackendBase<STATE_DIM, CONTROL_DIM, P_DIM, V_DIM, SCALAR, CONTINUOUS>::getNo
     return systemInterface_->getNonlinearSystemsInstances();
 }
 
+// TODO add corresponding quadratic systems instances
 
 template <size_t STATE_DIM, size_t CONTROL_DIM, size_t P_DIM, size_t V_DIM, typename SCALAR, bool CONTINUOUS>
 std::vector<
